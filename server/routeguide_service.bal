@@ -33,19 +33,19 @@ isolated service "RouteGuide" on ep {
             do {
                 pointCount += 1;
                 Point streamPoint = point;
+                Point? currentLastPoint = lastPoint;
                 check from Feature feature in FEATURES
                     do {
                         if feature.location == streamPoint {
                             featureCount += 1;
                         }
                     };
-
-                lastPoint = streamPoint;
-                if lastPoint is Point {
-                    int calculateDistanceResult = calculateDistance(lastPoint, streamPoint);
+                    
+                if currentLastPoint is Point {
+                    int calculateDistanceResult = calculateDistance(currentLastPoint, streamPoint);
                     distance += calculateDistanceResult;
                 }
-
+                lastPoint = streamPoint;
             };
         decimal endTime = time:monotonicNow();
         return {point_count: pointCount, feature_count: featureCount, distance: distance, elapsed_time: <int>(endTime - startTime)};
