@@ -1,0 +1,14 @@
+[container.image]
+repository="daneshk" # Container repository to host the container
+name="routeguide" # Name of the container image 
+tag="v0.1.0" # Tag of the container 
+
+[[container.copy.files]]
+sourceFile="./resources/route_guide_db.json" # Path to the external file
+target="/home/ballerina/resources/route_guide_db.json" # Path of t
+
+[cloud.deployment]
+min_memory="100Mi" # Minimum memory required for the container.
+max_memory="500Mi" # Maximum memory a single container can take.
+min_cpu="500m"  # Minimum CPU required for the container.
+max_cpu="500m" # Maximum CPU a single container can take.

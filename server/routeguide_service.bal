@@ -1,73 +1,65 @@
 import ballerina/io;
-import ballerina/log;
-import ballerina/time;
 import ballerina/grpc;
+import ballerina/time;
 
 listener grpc:Listener ep = new (9090);
-
-final Feature[] & readonly FEATURES = check populateFeature();
+final Feature[] & readonly features = check populateFeature();
 
 @grpc:Descriptor {value: ROUTE_GUIDE_DESC}
-isolated service "RouteGuide" on ep {
+service "RouteGuide" on ep {
 
     private map<RouteNote[]> routeNotesMap = {};
 
     remote function GetFeature(Point value) returns Feature|error {
-        foreach Feature item in FEATURES {
-            if item.location == value {
-                return item;
+        foreach Feature feature in features {
+            if feature.location == value {
+                return feature;
             }
         }
         return {location: value, name: ""};
     }
-
     remote function RecordRoute(stream<Point, grpc:Error?> pointStream) returns RouteSummary|error {
-        log:printInfo("RecordRoute called");
-        int pointCount = 0;
-        int featureCount = 0;
+        int point_count = 0;
+        int feature_count = 0;
         int distance = 0;
-        Point? lastPoint = ();
         decimal startTime = time:monotonicNow();
+        Point? lastPoint = ();
 
-        check from var point in pointStream
-            do {
-                pointCount += 1;
-                Point streamPoint = point;
-                Point? currentLastPoint = lastPoint;
-                check from Feature feature in FEATURES
-                    do {
-                        if feature.location == streamPoint {
-                            featureCount += 1;
-                        }
-                    };
-                    
-                if currentLastPoint is Point {
-                    int calculateDistanceResult = calculateDistance(currentLastPoint, streamPoint);
-                    distance += calculateDistanceResult;
+        check pointStream.forEach(function(Point p) {
+            point_count += 1;
+            foreach Feature item in features {
+                if item.location == p {
+                    feature_count += 1;
                 }
-                lastPoint = streamPoint;
-            };
+            }
+
+            if lastPoint is Point {
+                distance += calculateDistance(<Point>lastPoint, p);
+            }
+            lastPoint = p;
+        });
         decimal endTime = time:monotonicNow();
-        return {point_count: pointCount, feature_count: featureCount, distance: distance, elapsed_time: <int>(endTime - startTime)};
+        return {point_count: point_count, feature_count: feature_count, distance: distance, elapsed_time: <int>(endTime - startTime)};
     }
 
     remote function ListFeatures(Rectangle value) returns stream<Feature, error?>|error {
-        int left = int:min(value.lo.longitude, value.hi.longitude);
-        int right = int:max(value.lo.longitude, value.hi.longitude);
-        int top = int:max(value.lo.latitude, value.hi.latitude);
-        int bottom = int:min(value.lo.latitude, value.hi.latitude);
-        Feature[] features = from Feature item in FEATURES
-            where item.name != ""
-            where item.location.longitude >= left
-            where item.location.longitude <= right
-            where item.location.latitude >= bottom
-            where item.location.latitude <= top
-            select item;
-        return features.toStream();
-    }
+        int left = int:min(value.lo.latitude, value.hi.latitude);
+        int right = int:max(value.lo.latitude, value.hi.latitude);
+        int bottom = int:min(value.lo.longitude, value.hi.longitude);
+        int top = int:max(value.lo.longitude, value.hi.longitude);
 
-    remote function RouteChat(RouteGuideRouteNoteCaller caller, stream<RouteNote, grpc:Error?> routeNoteStream) returns error? {
-        check from var note in routeNoteStream
+        Feature[] selected = from Feature feature in features
+                                where feature.name != ""
+                                where feature.location.latitude >= left
+                                where feature.location.latitude <= right
+                                where feature.location.longitude >= bottom
+                                where feature.location.longitude <= top
+                                select feature;
+        return selected.toStream();
+    }
+    
+    remote function RouteChat(RouteGuideRouteNoteCaller caller, stream<RouteNote, grpc:Error?> clientStream) returns error? {
+        check from var note in clientStream
             do {
                 string key = string `${note.location.longitude} ${note.location.latitude}`;
                 lock {
@@ -86,17 +78,7 @@ isolated service "RouteGuide" on ep {
     }
 }
 
-function populateFeature() returns Feature[] & readonly|error {
-    json locationsJson = check io:fileReadJson("resources/route_guide_db.json");
-    Feature[] features = check locationsJson.cloneWithType();
-    return features.cloneReadOnly();
-}
-
-isolated function toRadians(float f) returns float {
-    return f * 0.017453292519943295;
-}
-
-isolated function calculateDistance(Point p1, Point p2) returns int {
+function calculateDistance(Point p1, Point p2) returns int {
     float cordFactor = 10000000; // 1x(10^7) OR 1e7
     float R = 6371000; // Earth radius in metres
     float lat1 = toRadians(<float>p1.latitude / cordFactor);
@@ -110,4 +92,14 @@ isolated function calculateDistance(Point p1, Point p2) returns int {
     float c = 2.0 * 'float:atan2('float:sqrt(a), 'float:sqrt(1.0 - a));
     float distance = R * c;
     return <int>distance;
+}
+
+function populateFeature() returns Feature[] & readonly|error {
+    json fileReadJson = check io:fileReadJson("./resources/route_guide_db.json");
+    Feature[] features = check fileReadJson.cloneWithType();
+    return features.cloneReadOnly();
+}
+
+function toRadians(float f) returns float {
+    return f * 0.017453292519943295;
 }
