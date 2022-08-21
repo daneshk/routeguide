@@ -1,7 +1,7 @@
 import ballerina/grpc;
 import ballerina/io;
 
-RouteGuideClient ep = check new ("http://192.168.1.30:30265");
+RouteGuideClient ep = check new ("http://192.168.1.30:30373");
 
 public function main() returns error? {
     Point request = {
@@ -21,8 +21,9 @@ public function main() returns error? {
             longitude: -730000000
         }
     };
+
     stream<Feature, grpc:Error?> listFeatures = check ep->ListFeatures(rectangle);
-    check listFeatures.forEach(function (Feature feature) {
+    check listFeatures.forEach(function (Feature feature){
         io:println(`Feature name: ${feature.name}`);
     });
 
@@ -35,14 +36,13 @@ public function main() returns error? {
     }];
 
     RecordRouteStreamingClient recordRouteClient = check ep->RecordRoute();
-    foreach Point item in points {
-        check recordRouteClient->sendPoint(item);
+    foreach var item in points {
+        check recordRouteClient->sendPoint(item);       
     }
     check recordRouteClient->complete();
 
-    RouteSummary|() receiveRouteSummary = check recordRouteClient->receiveRouteSummary();
-
-    if (receiveRouteSummary is RouteSummary) {
+    RouteSummary? receiveRouteSummary = check recordRouteClient->receiveRouteSummary();
+    if receiveRouteSummary is RouteSummary {
         io:println(`Finished trip with: ${receiveRouteSummary.point_count} points, ${receiveRouteSummary.feature_count} features, ${receiveRouteSummary.distance} meters, and ${receiveRouteSummary.elapsed_time} seconds`);
     }
 
@@ -53,21 +53,22 @@ public function main() returns error? {
         {location: {latitude: 411733222, longitude: -744228360}, message: "m4"}, 
         {location: {latitude: 411733222, longitude: -744228360}, message: "m5"}
     ];
-    RouteChatStreamingClient routeChat = check ep->RouteChat();
-    future<error?> f1 = start readRespose(routeChat);
-    
+
+    RouteChatStreamingClient routeChatClient = check ep->RouteChat();
+    future<error?> f1 = start readResponse(routeChatClient);
+
     foreach var item in routeNotes {
-        check routeChat->sendRouteNote(item);
+        check routeChatClient->sendRouteNote(item);
     }
-    check routeChat->complete();
+    check routeChatClient->complete();
     check wait f1;
 }
 
-function readRespose(RouteChatStreamingClient routeChat) returns error? {
-    RouteNote|() receiveRouteNote = check routeChat->receiveRouteNote();
+function readResponse(RouteChatStreamingClient routeChatClient) returns error? {
+    RouteNote? receiveRouteNote = check routeChatClient->receiveRouteNote();
     while receiveRouteNote is RouteNote {
         io:println(`Got message '${receiveRouteNote.message}' at lat=${receiveRouteNote.location.latitude},
                 lon=${receiveRouteNote.location.longitude}`);
-        receiveRouteNote = check routeChat->receiveRouteNote();
+        receiveRouteNote = check routeChatClient->receiveRouteNote();        
     }
 }

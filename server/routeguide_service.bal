@@ -1,45 +1,52 @@
 import ballerina/io;
-import ballerina/grpc;
 import ballerina/time;
+import ballerina/grpc;
 
 listener grpc:Listener ep = new (9090);
-final Feature[] & readonly features = check populateFeature();
 
 @grpc:Descriptor {value: ROUTE_GUIDE_DESC}
 service "RouteGuide" on ep {
 
-    private map<RouteNote[]> routeNotesMap = {};
+    final Feature[] & readonly features;
+    private map<RouteNote[]> routeNoteMap = {};
+
+    function init() returns error? {
+        self.features = check popolateFeatures();
+    }
 
     remote function GetFeature(Point value) returns Feature|error {
-        foreach Feature feature in features {
-            if feature.location == value {
-                return feature;
+        foreach var item in self.features {
+            if item.location == value {
+                return item;
             }
         }
         return {location: value, name: ""};
     }
+
     remote function RecordRoute(stream<Point, grpc:Error?> pointStream) returns RouteSummary|error {
         int point_count = 0;
         int feature_count = 0;
         int distance = 0;
-        decimal startTime = time:monotonicNow();
         Point? lastPoint = ();
+        decimal startTime = time:monotonicNow();
 
-        check pointStream.forEach(function(Point p) {
+        check pointStream.forEach(function(Point point) {
             point_count += 1;
-            foreach Feature item in features {
-                if item.location == p {
+
+            foreach var item in self.features {
+                if item.location == point {
                     feature_count += 1;
                 }
             }
 
             if lastPoint is Point {
-                distance += calculateDistance(<Point>lastPoint, p);
+                distance += calculateDistance(<Point>lastPoint, point);
             }
-            lastPoint = p;
+            lastPoint = point;
         });
         decimal endTime = time:monotonicNow();
-        return {point_count: point_count, feature_count: feature_count, distance: distance, elapsed_time: <int>(endTime - startTime)};
+
+        return {point_count, feature_count, distance, elapsed_time: <int>(endTime - startTime)};
     }
 
     remote function ListFeatures(Rectangle value) returns stream<Feature, error?>|error {
@@ -48,22 +55,23 @@ service "RouteGuide" on ep {
         int bottom = int:min(value.lo.longitude, value.hi.longitude);
         int top = int:max(value.lo.longitude, value.hi.longitude);
 
-        Feature[] selected = from Feature feature in features
-                                where feature.name != ""
-                                where feature.location.latitude >= left
-                                where feature.location.latitude <= right
-                                where feature.location.longitude >= bottom
-                                where feature.location.longitude <= top
-                                select feature;
+        Feature[] selected = from Feature feature in self.features
+            where feature.name != ""
+            where feature.location.latitude >= left
+            where feature.location.latitude <= right
+            where feature.location.longitude >= bottom
+            where feature.location.longitude <= top
+            select feature;
+
         return selected.toStream();
+
     }
-    
     remote function RouteChat(RouteGuideRouteNoteCaller caller, stream<RouteNote, grpc:Error?> clientStream) returns error? {
         check from var note in clientStream
             do {
-                string key = string `${note.location.longitude} ${note.location.latitude}`;
+                string key = string `${note.location.latitude} ${note.location.longitude}`;
                 lock {
-                    RouteNote[]? routeNotes = self.routeNotesMap[key];
+                    RouteNote[]? routeNotes = self.routeNoteMap[key];
                     if routeNotes is RouteNote[] {
                         check from var item in routeNotes
                             do {
@@ -71,11 +79,17 @@ service "RouteGuide" on ep {
                             };
                         routeNotes.push(note.cloneReadOnly());
                     } else {
-                        self.routeNotesMap[key] = [note.cloneReadOnly()];
+                        self.routeNoteMap[key] = [note.cloneReadOnly()];
                     }
                 }
             };
     }
+}
+
+function popolateFeatures() returns Feature[] & readonly|error {
+    json fileReadJson = check io:fileReadJson("./resources/route_guide_db.json");
+    Feature[] features = check fileReadJson.cloneWithType();
+    return features.cloneReadOnly();
 }
 
 function calculateDistance(Point p1, Point p2) returns int {
@@ -92,12 +106,6 @@ function calculateDistance(Point p1, Point p2) returns int {
     float c = 2.0 * 'float:atan2('float:sqrt(a), 'float:sqrt(1.0 - a));
     float distance = R * c;
     return <int>distance;
-}
-
-function populateFeature() returns Feature[] & readonly|error {
-    json fileReadJson = check io:fileReadJson("./resources/route_guide_db.json");
-    Feature[] features = check fileReadJson.cloneWithType();
-    return features.cloneReadOnly();
 }
 
 function toRadians(float f) returns float {
