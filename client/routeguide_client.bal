@@ -1,7 +1,7 @@
 import ballerina/grpc;
 import ballerina/io;
 
-RouteGuideClient ep = check new ("http://192.168.1.30:30373");
+RouteGuideClient ep = check new ("http://localhost:9090");
 
 public function main() returns error? {
     Point request = {
@@ -39,7 +39,7 @@ public function main() returns error? {
     foreach var item in points {
         check recordRouteClient->sendPoint(item);       
     }
-    check recordRouteClient->complete();
+    check recordRouteClient->sendError(error grpc:AbortedError("ABCD"));
 
     RouteSummary? receiveRouteSummary = check recordRouteClient->receiveRouteSummary();
     if receiveRouteSummary is RouteSummary {
