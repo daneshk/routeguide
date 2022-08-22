@@ -244,7 +244,7 @@ modules = [
 ]
 
 [[package]]
-org = "daneshk"
+org = "danesh"
 name = "server"
 version = "0.1.0"
 dependencies = [
@@ -256,7 +256,7 @@ dependencies = [
 	{org = "ballerinai", name = "observe"}
 ]
 modules = [
-	{org = "daneshk", packageName = "server", moduleName = "server"}
+	{org = "danesh", packageName = "server", moduleName = "server"}
 ]
 
 

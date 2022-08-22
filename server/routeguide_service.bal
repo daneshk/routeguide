@@ -1,5 +1,6 @@
 import ballerina/io;
 import ballerina/time;
+import ballerina/log;
 import ballerina/grpc;
 
 listener grpc:Listener ep = new (9090);
@@ -23,14 +24,14 @@ service "RouteGuide" on ep {
         return {location: value, name: ""};
     }
 
-    remote function RecordRoute(stream<Point, grpc:Error?> pointStream) returns RouteSummary|error {
+    remote function RecordRoute(stream<Point, grpc:Error?> pointStream) returns RouteSummary|error? {
         int point_count = 0;
         int feature_count = 0;
         int distance = 0;
         Point? lastPoint = ();
         decimal startTime = time:monotonicNow();
 
-        check pointStream.forEach(function(Point point) {
+        grpc:Error? clientError = pointStream.forEach(function(Point point) {
             point_count += 1;
 
             foreach var item in self.features {
@@ -44,30 +45,34 @@ service "RouteGuide" on ep {
             }
             lastPoint = point;
         });
-        decimal endTime = time:monotonicNow();
+        if clientError is grpc:Error {
+            log:printError("client stream ended with an error", 'error = clientError);
+            return;
+        }
 
+        decimal endTime = time:monotonicNow();
         return {point_count, feature_count, distance, elapsed_time: <int>(endTime - startTime)};
     }
 
     remote function ListFeatures(Rectangle value) returns stream<Feature, error?>|error {
-        int left = int:min(value.lo.latitude, value.hi.latitude);
-        int right = int:max(value.lo.latitude, value.hi.latitude);
-        int bottom = int:min(value.lo.longitude, value.hi.longitude);
-        int top = int:max(value.lo.longitude, value.hi.longitude);
+        int left = int:min(value.lo.longitude, value.hi.longitude);
+        int right = int:max(value.lo.longitude, value.hi.longitude);
+        int bottom = int:min(value.lo.latitude, value.hi.latitude);
+        int top = int:max(value.lo.latitude, value.hi.latitude);
 
         Feature[] selected = from Feature feature in self.features
             where feature.name != ""
-            where feature.location.latitude >= left
-            where feature.location.latitude <= right
-            where feature.location.longitude >= bottom
-            where feature.location.longitude <= top
+            where feature.location.longitude >= left
+            where feature.location.longitude <= right
+            where feature.location.latitude >= bottom
+            where feature.location.latitude <= top
             select feature;
 
         return selected.toStream();
 
     }
     remote function RouteChat(RouteGuideRouteNoteCaller caller, stream<RouteNote, grpc:Error?> clientStream) returns error? {
-        check from var note in clientStream
+        error? clientError = from var note in clientStream
             do {
                 string key = string `${note.location.latitude} ${note.location.longitude}`;
                 lock {
@@ -83,6 +88,9 @@ service "RouteGuide" on ep {
                     }
                 }
             };
+        if clientError is error {
+            log:printError("client stream ended with an error", 'error = clientError);
+        }
     }
 }
 
