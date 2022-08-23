@@ -1,5 +1,5 @@
-import ballerina/grpc;
 import ballerina/io;
+import ballerina/grpc;
 
 RouteGuideClient ep = check new ("http://localhost:9090");
 
@@ -10,6 +10,7 @@ public function main() returns error? {
     };
     Feature response = check ep->GetFeature(request);
     io:println(`Get Feature name: ${response.name}`);
+
 
     Rectangle rectangle = {
         hi: {
@@ -26,7 +27,7 @@ public function main() returns error? {
     check listFeatures.forEach(function (Feature feature){
         io:println(`Feature name: ${feature.name}`);
     });
-
+    
     Point[] points = [{
         latitude: 407838351,
         longitude: -746143763
@@ -39,7 +40,7 @@ public function main() returns error? {
     foreach var item in points {
         check recordRouteClient->sendPoint(item);       
     }
-    check recordRouteClient->sendError(error grpc:AbortedError("ABCD"));
+    check recordRouteClient->complete();
 
     RouteSummary? receiveRouteSummary = check recordRouteClient->receiveRouteSummary();
     if receiveRouteSummary is RouteSummary {
@@ -61,7 +62,7 @@ public function main() returns error? {
         check routeChatClient->sendRouteNote(item);
     }
     check routeChatClient->complete();
-    check wait f1;
+    check wait f1;    
 }
 
 function readResponse(RouteChatStreamingClient routeChatClient) returns error? {

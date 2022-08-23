@@ -1,18 +1,18 @@
 import ballerina/io;
+import ballerina/grpc;
 import ballerina/time;
 import ballerina/log;
-import ballerina/grpc;
 
 listener grpc:Listener ep = new (9090);
 
 @grpc:Descriptor {value: ROUTE_GUIDE_DESC}
 service "RouteGuide" on ep {
 
-    final Feature[] & readonly features;
+    private final Feature[] features;
     private map<RouteNote[]> routeNoteMap = {};
 
     function init() returns error? {
-        self.features = check popolateFeatures();
+        self.features = check populateFeatures();
     }
 
     remote function GetFeature(Point value) returns Feature|error {
@@ -24,14 +24,14 @@ service "RouteGuide" on ep {
         return {location: value, name: ""};
     }
 
-    remote function RecordRoute(stream<Point, grpc:Error?> pointStream) returns RouteSummary|error? {
+    remote function RecordRoute(stream<Point, grpc:Error?> clientStream) returns RouteSummary|error? {
         int point_count = 0;
         int feature_count = 0;
         int distance = 0;
         Point? lastPoint = ();
         decimal startTime = time:monotonicNow();
 
-        grpc:Error? clientError = pointStream.forEach(function(Point point) {
+        grpc:Error? clientError = clientStream.forEach(function(Point point) {
             point_count += 1;
 
             foreach var item in self.features {
@@ -60,17 +60,17 @@ service "RouteGuide" on ep {
         int bottom = int:min(value.lo.latitude, value.hi.latitude);
         int top = int:max(value.lo.latitude, value.hi.latitude);
 
-        Feature[] selected = from Feature feature in self.features
-            where feature.name != ""
-            where feature.location.longitude >= left
-            where feature.location.longitude <= right
-            where feature.location.latitude >= bottom
-            where feature.location.latitude <= top
-            select feature;
+        Feature[] selected = from Feature item in self.features
+        where item.name != ""
+        where item.location.longitude >= left
+        where item.location.longitude <= right
+        where item.location.latitude >= bottom
+        where item.location.latitude <= top        
+        select item;
 
         return selected.toStream();
-
     }
+
     remote function RouteChat(RouteGuideRouteNoteCaller caller, stream<RouteNote, grpc:Error?> clientStream) returns error? {
         error? clientError = from var note in clientStream
             do {
@@ -94,12 +94,13 @@ service "RouteGuide" on ep {
     }
 }
 
-function popolateFeatures() returns Feature[] & readonly|error {
-    json fileReadJson = check io:fileReadJson("./resources/route_guide_db.json");
+function populateFeatures() returns Feature[]|error {
+    json fileReadJson = check io:fileReadJson("./resources/data.json");
     Feature[] features = check fileReadJson.cloneWithType();
-    return features.cloneReadOnly();
+    return features;
 }
 
+//Calculates the distance between two points using the "haversine" formula.
 function calculateDistance(Point p1, Point p2) returns int {
     float cordFactor = 10000000; // 1x(10^7) OR 1e7
     float R = 6371000; // Earth radius in metres
